@@ -1,0 +1,31 @@
+{
+  "name": "stellarbrief",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "generate-keypair": "ts-node src/tools/generateKeypair.ts",
+    "check-balance": "ts-node src/tools/checkWalletBalance.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.84.0",
+    "@stellar/stellar-sdk": "^15.0.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "x402": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}
