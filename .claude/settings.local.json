@@ -48,7 +48,21 @@
       "Bash(curl -s http://localhost:3001/health)",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const a=JSON.parse\\(d\\); const usdc=a.balances.find\\(b=>b.asset_code==='USDC'\\); console.log\\('Server USDC:', usdc?.balance ?? 'no USDC trustline'\\);\")",
       "Bash(xargs kill:*)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/market/BTC-USD)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/news/BTC-USD)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/sentiment/BTC-USD)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/bias/BTC-USD)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:3001/deliver/email -H \"Content-Type: application/json\" -d '{\"to\":\"a@b.com\",\"subject\":\"s\",\"body\":\"b\"}')",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=BTC&lTs=$\\(date +%s\\)\")",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const a=JSON.parse\\(d\\); console.log\\('status:', a.Response, 'count:', a.Data?.length\\); if\\(a.Data?.[0]\\) console.log\\('sample:', JSON.stringify\\({title:a.Data[0].title,source:a.Data[0].source_info?.name,url:a.Data[0].url,published:a.Data[0].published_on},null,2\\)\\)\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/v2/news/?lang=EN\")",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const a=JSON.parse\\(d\\); console.log\\('status:', a.Response, 'msg:', a.Message, 'count:', a.Data?.length\\); if\\(a.Data?.[0]\\) console.log\\('sample title:', a.Data[0].title, '\\\\nsource:', a.Data[0].source_info?.name\\)\")",
+      "Bash(curl -s --max-time 10 \"https://cryptopanic.com/news/rss/\")",
+      "Bash(curl -s --max-time 10 \"https://www.coindesk.com/arc/outboundfeeds/rss/\")",
+      "Bash(curl -s --max-time 10 \"https://feeds.feedburner.com/CoinDesk\")",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const v = process.env.ANTHROPIC_API_KEY; console.log\\(v && v.length > 10 ? 'KEY PRESENT \\(length '+v.length+'\\)' : 'KEY MISSING OR EMPTY \\(value: \\\\\"'+v+'\\\\\"\\)'\\)\")",
+      "Bash(env)"
     ]
   }
 }
