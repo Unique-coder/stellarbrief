@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node dist/server/index.js",
     "generate-keypair": "ts-node src/tools/generateKeypair.ts",
-    "check-balance": "ts-node src/tools/checkWalletBalance.ts"
+    "check-balance": "ts-node src/tools/checkWalletBalance.ts",
+    "data-server": "ts-node src/server/dataServer.ts",
+    "fetch-market-data": "ts-node src/tools/fetchMarketData.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,10 +18,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.84.0",
     "@stellar/stellar-sdk": "^15.0.1",
+    "@x402/core": "^2.9.0",
+    "@x402/express": "^2.9.0",
+    "@x402/fetch": "^2.9.0",
+    "@x402/stellar": "^2.9.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
-    "express": "^5.2.1",
-    "x402": "^1.1.0"
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

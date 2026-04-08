@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "data-server",
+      "runtimeExecutable": "/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node",
+      "runtimeArgs": ["node_modules/ts-node/dist/bin.js", "src/server/dataServer.ts"],
+      "port": 3001,
+      "autoPort": false
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node",
+      "runtimeArgs": ["node_modules/ts-node/dist/bin.js", "src/server/index.ts"],
+      "port": 3000
+    }
+  ]
+}

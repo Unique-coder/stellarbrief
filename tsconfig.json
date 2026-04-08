@@ -9,7 +9,19 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "paths": {
+      "@x402/stellar": ["./node_modules/@x402/stellar/dist/cjs/index.d.ts"],
+      "@x402/stellar/exact/client": ["./node_modules/@x402/stellar/dist/cjs/exact/client/index.d.ts"],
+      "@x402/stellar/exact/server": ["./node_modules/@x402/stellar/dist/cjs/exact/server/index.d.ts"],
+      "@x402/stellar/exact/facilitator": ["./node_modules/@x402/stellar/dist/cjs/exact/facilitator/index.d.ts"],
+      "@x402/fetch": ["./node_modules/@x402/fetch/dist/cjs/index.d.ts"],
+      "@x402/express": ["./node_modules/@x402/express/dist/cjs/index.d.ts"],
+      "@x402/core": ["./node_modules/@x402/core/dist/cjs/index.d.ts"],
+      "@x402/core/client": ["./node_modules/@x402/core/dist/cjs/client/index.d.ts"],
+      "@x402/core/server": ["./node_modules/@x402/core/dist/cjs/server/index.d.ts"],
+      "@x402/core/types": ["./node_modules/@x402/core/dist/cjs/types/index.d.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
