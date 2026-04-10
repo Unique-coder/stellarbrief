@@ -26,7 +26,7 @@ import {
   CALL_COST,
 } from "./decisions/index";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

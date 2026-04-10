@@ -15,7 +15,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const PORT = process.env.DATA_SERVER_PORT ? parseInt(process.env.DATA_SERVER_PORT) : 3001;
 const SERVER_WALLET_ADDRESS =

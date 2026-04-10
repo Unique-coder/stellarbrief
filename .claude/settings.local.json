@@ -62,7 +62,15 @@
       "Bash(curl -s --max-time 10 \"https://www.coindesk.com/arc/outboundfeeds/rss/\")",
       "Bash(curl -s --max-time 10 \"https://feeds.feedburner.com/CoinDesk\")",
       "Bash(node -e \"require\\('dotenv'\\).config\\(\\); const v = process.env.ANTHROPIC_API_KEY; console.log\\(v && v.length > 10 ? 'KEY PRESENT \\(length '+v.length+'\\)' : 'KEY MISSING OR EMPTY \\(value: \\\\\"'+v+'\\\\\"\\)'\\)\")",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(grep -v \"^$\")",
+      "Bash(lsof -ti:3001)",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js src/server/dataServer.ts)",
+      "Bash(echo \"Server PID: $!\")",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); console.log\\(JSON.parse\\(d\\).ok ? '✓ Health OK' : 'FAIL: '+d\\)\")",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js src/tools/checkWalletBalance.ts)",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node -e ':*)",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js src/agent/agent.ts BTC-USD,ETH-USD,SOL-USD 2.0 telegram)"
     ]
   }
 }

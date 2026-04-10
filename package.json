@@ -10,7 +10,8 @@
     "check-balance": "ts-node src/tools/checkWalletBalance.ts",
     "data-server": "ts-node src/server/dataServer.ts",
     "fetch-market-data": "ts-node src/tools/fetchMarketData.ts",
-    "test": "node --require ts-node/register --test src/agent/decisions/decisions.test.ts"
+    "test": "node --require ts-node/register --test src/agent/decisions/decisions.test.ts",
+    "bot": "ts-node src/bot/telegramBot.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.84.0",
     "@stellar/stellar-sdk": "^15.0.1",
+    "@types/node-telegram-bot-api": "^0.64.14",
     "@x402/core": "^2.9.0",
     "@x402/express": "^2.9.0",
     "@x402/fetch": "^2.9.0",
@@ -26,6 +28,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "node-telegram-bot-api": "^0.67.0",
     "resend": "^6.10.0"
   },
   "devDependencies": {
