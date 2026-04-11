@@ -3,22 +3,21 @@
  *
  * Commands:
  *   /brief <PAIR1> <PAIR2> ... <threshold>
- *       e.g. /brief BTC-USD ETH-USD SOL-USD 2.5
- *       Runs the agent, pays for data via x402, delivers brief to this chat.
- *
  *   /balance
- *       Returns the current USDC balance of the agent wallet.
- *
+ *   /status
  *   /help
- *       Usage instructions.
  */
 
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import { checkWalletBalance } from "../tools/checkWalletBalance";
-import { runAgent } from "../agent/agent";
+import { runAgent, RunResult } from "../agent/agent";
 
-dotenv.config();
+dotenv.config({ override: true });
+
+// ─── Module-level state ───────────────────────────────────────────────────────
+
+let lastRun: (RunResult & { timestamp: number; watchlist: string[] }) | null = null;
 
 // ─── Parse /brief command ─────────────────────────────────────────────────────
 
@@ -27,38 +26,40 @@ interface BriefCommand {
   threshold: number;
 }
 
-function parseBriefCommand(text: string): BriefCommand | null {
-  // "/brief BTC-USD ETH-USD SOL-USD 2.5"
-  // parts[0] = "/brief", parts[1..n-1] = pairs, parts[n] = threshold
+interface ParseError {
+  error: string;
+}
+
+function parseBriefCommand(text: string): BriefCommand | ParseError {
   const parts = text.trim().split(/\s+/);
-  if (parts.length < 3) return null; // need at least: /brief PAIR threshold
+  // Minimum: /brief PAIR threshold  → 3 tokens
+  if (parts.length < 3) {
+    return { error: "Too few arguments. Provide at least one pair and a threshold.\nExample: `/brief BTC-USD ETH-USD 2.0`" };
+  }
 
   const lastToken = parts[parts.length - 1];
   const threshold = parseFloat(lastToken);
-  if (isNaN(threshold) || threshold <= 0) return null;
+  if (isNaN(threshold)) {
+    return { error: `The last argument must be a number (threshold). Got: *${lastToken}*\nExample: \`/brief BTC-USD 2.0\`` };
+  }
+  if (threshold < 0.1 || threshold > 20) {
+    return { error: `Threshold must be between 0.1 and 20. Got: *${threshold}*\nTip: 2.0 means "only fetch news/sentiment if 24h price move ≥ 2%"` };
+  }
 
   const watchlist = parts
     .slice(1, -1)
     .map((p) => p.toUpperCase())
-    .filter((p) => /^[A-Z0-9]+-[A-Z0-9]+$/.test(p)); // validate pair format
+    .filter((p) => /^[A-Z0-9]+-[A-Z0-9]+$/.test(p));
 
-  if (watchlist.length === 0) return null;
+  if (watchlist.length === 0) {
+    return { error: "No valid pairs found. Pairs must be in COIN-USD format.\nExample: `BTC-USD`, `ETH-USD`, `SOL-USD`" };
+  }
+
   return { watchlist, threshold };
 }
 
-// ─── Format RunResult for a status summary (sent on error / partial) ──────────
-
-function formatSpendSummary(
-  spendLog: Array<{ tool: string; cost: number; balanceBefore: number; balanceAfter: number }>,
-  totalSpent: number,
-  partial: boolean
-): string {
-  const lines = [
-    `\n─── Wallet Summary ───`,
-    `Total spent: $${totalSpent.toFixed(4)} USDC across ${spendLog.length} calls`,
-    partial ? "⚠️  Partial run — wallet ran out before all pairs were analysed." : "",
-  ].filter(Boolean);
-  return lines.join("\n");
+function isParseError(r: BriefCommand | ParseError): r is ParseError {
+  return "error" in r;
 }
 
 // ─── Bot setup ────────────────────────────────────────────────────────────────
@@ -79,25 +80,32 @@ export function startBot(): void {
     const chatId = msg.chat.id;
     bot.sendMessage(
       chatId,
-      `*StellarBrief* — trading intelligence powered by x402 micropayments on Stellar.
+      `*StellarBrief* — an autonomous trading intelligence agent powered by Claude and Stellar micropayments.
+It analyzes crypto pairs, generates directional bias signals, and delivers briefs to your Telegram — paying for every data call in real USDC via x402 on Stellar.
 
 *Commands:*
 
 /brief <PAIR1> <PAIR2> ... <threshold>
-  Run a full trading analysis. Each API call costs \\$0\\.01 USDC from the agent wallet\\.
-  Example: \`/brief BTC\\-USD ETH\\-USD SOL\\-USD 2\\.0\`
-  Pairs: any top\\-20 coin vs USD \\(BTC, ETH, SOL, XLM, ADA, etc\\.\\)
-  Threshold: minimum 24h price move \\(\\%\\) to trigger news \\+ sentiment fetching\\.
+  Run a full analysis. Fetches live prices, news, and Claude-generated bias for each pair.
+  Example: \`/brief BTC-USD ETH-USD SOL-USD 2.0\`
+  Pairs: any top-20 coin vs USD (BTC, ETH, SOL, XLM, ADA, XRP, AVAX, LINK, etc.)
+  Threshold: minimum 24h % move to trigger news + sentiment (0.1–20).
 
 /balance
-  Check the agent wallet's current USDC balance\\.
+  Check the agent wallet's current USDC balance on Stellar Testnet.
+
+/status
+  Show a summary of the last brief run: pairs analyzed, USDC spent, delivery status, and time.
 
 /help
-  Show this message\\.
+  Show this message.
 
-*How it works:*
-The agent checks your wallet, fetches market data for each pair, conditionally fetches news and sentiment if the price is moving, then generates a directional bias using Claude\\. All data is paid for per\\-call via x402 on Stellar testnet\\.`,
-      { parse_mode: "MarkdownV2" }
+*How pricing works:*
+Each API call (market data, news, sentiment, bias, delivery) costs *$0.01 USDC* from the agent wallet, paid automatically via x402 micropayments on Stellar Testnet.
+
+*Supply side:*
+The data API runs on \`http://localhost:3001\` and is open to any x402-compatible client. Any tool that can pay $0.01 USDC per request can call \`/market/:pair\`, \`/news/:pair\`, \`/sentiment/:pair\`, \`/bias/:pair\`, \`/deliver/email\`, or \`/deliver/telegram\` directly — no API key required.`,
+      { parse_mode: "Markdown" }
     );
   });
 
@@ -107,12 +115,45 @@ The agent checks your wallet, fetches market data for each pair, conditionally f
     const chatId = msg.chat.id;
     try {
       const balance = await checkWalletBalance();
-      bot.sendMessage(chatId, `💰 Agent wallet balance: *$${balance.toFixed(4)} USDC*`, {
-        parse_mode: "Markdown",
-      });
+      await bot.sendMessage(
+        chatId,
+        `💰 *Agent Wallet Balance*\n$${balance.toFixed(2)} USDC\nStellar Testnet`,
+        { parse_mode: "Markdown" }
+      );
     } catch (err) {
-      bot.sendMessage(chatId, `❌ Error checking balance: ${err instanceof Error ? err.message : String(err)}`);
+      await bot.sendMessage(
+        chatId,
+        `❌ Error checking balance: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
+  });
+
+  // ── /status ────────────────────────────────────────────────────────────────
+
+  bot.onText(/^\/status/, (msg) => {
+    const chatId = msg.chat.id;
+
+    if (!lastRun) {
+      bot.sendMessage(chatId, "No brief has been run yet. Use /brief to get started.");
+      return;
+    }
+
+    const { pairs, spendLog, delivered, partial, totalSpent, timestamp, watchlist } = lastRun;
+    const completedPairs = pairs.filter((p) => p.bias);
+    const date = new Date(timestamp).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+
+    const lines = [
+      `📊 *Last Brief Summary*`,
+      ``,
+      `Pairs requested:  ${watchlist.join(", ")}`,
+      `Pairs completed:  ${completedPairs.length} / ${watchlist.length}`,
+      `Total spent:      $${totalSpent.toFixed(4)} USDC (${spendLog.length} calls)`,
+      `Delivered:        ${delivered ? "✅ Yes" : "❌ No"}`,
+      `Partial run:      ${partial ? "⚠️ Yes — wallet ran low" : "No"}`,
+      `Run time:         ${date}`,
+    ];
+
+    bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
   });
 
   // ── /brief ─────────────────────────────────────────────────────────────────
@@ -122,67 +163,72 @@ The agent checks your wallet, fetches market data for each pair, conditionally f
     const rawText = `/brief${match?.[1] ?? ""}`;
 
     const parsed = parseBriefCommand(rawText);
-    if (!parsed) {
-      bot.sendMessage(
-        chatId,
-        `❌ Invalid format. Usage:\n\`/brief BTC-USD ETH-USD 2.0\`\n\nThe last argument must be the volatility threshold (e.g. 2.0 for 2%).\nPairs must be in COIN-USD format.`,
-        { parse_mode: "Markdown" }
-      );
+
+    if (isParseError(parsed)) {
+      await bot.sendMessage(chatId, `❌ ${parsed.error}`, { parse_mode: "Markdown" });
       return;
     }
 
     const { watchlist, threshold } = parsed;
 
-    // Immediate acknowledgement
+    // Send acknowledgement immediately — do not block on agent run
     await bot.sendMessage(
       chatId,
-      `⚙️ *Running StellarBrief...*\n\nChecking wallet and analyzing:\n${watchlist.map((p) => `• ${p}`).join("\n")}\n\nVolatility threshold: ${threshold}%\nThis may take 30–60 seconds depending on pair count.`,
+      `⏳ *Running StellarBrief...*\nAnalyzing ${watchlist.length} pair${watchlist.length > 1 ? "s" : ""} with ${threshold}% threshold.\nChecking wallet and fetching live data now.`,
       { parse_mode: "Markdown" }
     );
 
-    console.log(`[bot] /brief received from chat ${chatId}: pairs=${watchlist.join(",")} threshold=${threshold}`);
+    console.log(`[bot] /brief from chat ${chatId}: pairs=[${watchlist.join(",")}] threshold=${threshold}`);
 
-    try {
-      const result = await runAgent(watchlist, threshold, "telegram", chatId.toString());
+    // Run agent asynchronously — deliver_brief tool sends the brief directly to this chat
+    runAgent(watchlist, threshold, "telegram", chatId.toString())
+      .then(async (result) => {
+        // Store for /status
+        lastRun = { ...result, timestamp: Date.now(), watchlist };
 
-      console.log(`[bot] Run complete — spent $${result.totalSpent.toFixed(4)}, delivered=${result.delivered}, partial=${result.partial}`);
+        console.log(`[bot] Run complete — spent $${result.totalSpent.toFixed(4)}, delivered=${result.delivered}, partial=${result.partial}`);
 
-      // If agent failed to deliver (e.g. wallet too low for delivery), send a fallback summary
-      if (!result.delivered) {
-        const pairsWithBias = result.pairs.filter((p) => p.bias);
-        const lines: string[] = [
-          result.partial
-            ? `⚠️ *Partial brief* — wallet ran out before all pairs were complete.`
-            : `⚠️ *Brief generated but delivery failed.*`,
-          `\nCompleted pairs: ${pairsWithBias.length}/${watchlist.length}`,
-        ];
+        // Agent's deliver_brief already sent the message to this chat if successful.
+        // Only send fallback if delivery did not happen.
+        if (!result.delivered) {
+          const pairsWithBias = result.pairs.filter((p) => p.bias);
+          const lines: string[] = [
+            result.partial
+              ? `⚠️ *Partial brief* — wallet ran low before all pairs were complete.`
+              : `⚠️ *Brief generated but delivery failed.*`,
+            `Completed: ${pairsWithBias.length}/${watchlist.length} pairs`,
+          ];
 
-        for (const p of pairsWithBias) {
-          const b = p.bias as {
-            signal?: string;
-            confidence?: string;
-            rationale?: string;
-            keyLevels?: { support?: number; resistance?: number };
-          } | undefined;
-          const m = p.marketData as { change24h?: number } | undefined;
-          if (b) {
-            lines.push(
-              `\n*${p.pair}*\nSignal: ${b.signal ?? "—"}  Confidence: ${b.confidence ?? "—"}\n24h: ${m?.change24h?.toFixed(2) ?? "?"}%\nSupport: $${b.keyLevels?.support ?? "—"}  Resistance: $${b.keyLevels?.resistance ?? "—"}\n${b.rationale ?? ""}`
-            );
+          for (const p of pairsWithBias) {
+            const b = p.bias as {
+              signal?: string;
+              confidence?: string;
+              rationale?: string;
+              keyLevels?: { support?: number; resistance?: number };
+            } | undefined;
+            const m = p.marketData as { change24h?: number } | undefined;
+            if (b) {
+              lines.push(
+                `\n*${p.pair}*\nSignal: ${b.signal ?? "—"}  Confidence: ${b.confidence ?? "—"}\n24h: ${m?.change24h?.toFixed(2) ?? "?"}%\nSupport: $${b.keyLevels?.support ?? "—"}  Resistance: $${b.keyLevels?.resistance ?? "—"}\n${b.rationale ?? ""}`
+              );
+            }
           }
-        }
 
-        lines.push(formatSpendSummary(result.spendLog, result.totalSpent, result.partial));
-        await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[bot] Agent error: ${message}`);
-      await bot.sendMessage(chatId, `❌ Agent error: ${message}`);
-    }
+          lines.push(`\n─── Wallet Summary ───`);
+          lines.push(`Spent: $${result.totalSpent.toFixed(4)} USDC across ${result.spendLog.length} calls`);
+          if (result.partial) lines.push(`⚠️  Wallet too low to continue — run /balance to check.`);
+
+          await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+        }
+      })
+      .catch(async (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[bot] Agent error: ${message}`);
+        await bot.sendMessage(chatId, `❌ Agent error: ${message}`);
+      });
   });
 
-  // ── Error handling ─────────────────────────────────────────────────────────
+  // ── Polling error handler ──────────────────────────────────────────────────
 
   bot.on("polling_error", (err) => {
     console.error("[bot] Polling error:", err.message);
