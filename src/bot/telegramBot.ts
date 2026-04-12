@@ -18,6 +18,7 @@ dotenv.config({ override: true });
 // ─── Module-level state ───────────────────────────────────────────────────────
 
 let lastRun: (RunResult & { timestamp: number; watchlist: string[] }) | null = null;
+let briefInProgress = false;
 
 // ─── Parse /brief command ─────────────────────────────────────────────────────
 
@@ -133,6 +134,11 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
   bot.onText(/^\/status/, (msg) => {
     const chatId = msg.chat.id;
 
+    if (briefInProgress) {
+      bot.sendMessage(chatId, "⏳ *Brief in progress* — the agent is currently fetching data and analyzing pairs. Use /status again when it's done.");
+      return;
+    }
+
     if (!lastRun) {
       bot.sendMessage(chatId, "No brief has been run yet. Use /brief to get started.");
       return;
@@ -142,6 +148,14 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
     const completedPairs = pairs.filter((p) => p.bias);
     const date = new Date(timestamp).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
+    // Determine why it was partial (wallet low vs. data/server error)
+    let partialNote = "No";
+    if (partial && totalSpent === 0) {
+      partialNote = "⚠️ Yes — no data fetched (server unreachable or unsupported pair)";
+    } else if (partial) {
+      partialNote = "⚠️ Yes — wallet ran low mid-run";
+    }
+
     const lines = [
       `📊 *Last Brief Summary*`,
       ``,
@@ -149,7 +163,7 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
       `Pairs completed:  ${completedPairs.length} / ${watchlist.length}`,
       `Total spent:      $${totalSpent.toFixed(4)} USDC (${spendLog.length} calls)`,
       `Delivered:        ${delivered ? "✅ Yes" : "❌ No"}`,
-      `Partial run:      ${partial ? "⚠️ Yes — wallet ran low" : "No"}`,
+      `Partial run:      ${partialNote}`,
       `Run time:         ${date}`,
     ];
 
@@ -171,7 +185,14 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
 
     const { watchlist, threshold } = parsed;
 
+    // Block concurrent runs
+    if (briefInProgress) {
+      await bot.sendMessage(chatId, "⏳ A brief is already running. Please wait for it to finish before starting another.");
+      return;
+    }
+
     // Send acknowledgement immediately — do not block on agent run
+    briefInProgress = true;
     await bot.sendMessage(
       chatId,
       `⏳ *Running StellarBrief...*\nAnalyzing ${watchlist.length} pair${watchlist.length > 1 ? "s" : ""} with ${threshold}% threshold.\nChecking wallet and fetching live data now.`,
@@ -183,7 +204,7 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
     // Run agent asynchronously — deliver_brief tool sends the brief directly to this chat
     runAgent(watchlist, threshold, "telegram", chatId.toString())
       .then(async (result) => {
-        // Store for /status
+        briefInProgress = false;
         lastRun = { ...result, timestamp: Date.now(), watchlist };
 
         console.log(`[bot] Run complete — spent $${result.totalSpent.toFixed(4)}, delivered=${result.delivered}, partial=${result.partial}`);
@@ -192,10 +213,19 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
         // Only send fallback if delivery did not happen.
         if (!result.delivered) {
           const pairsWithBias = result.pairs.filter((p) => p.bias);
+
+          // Diagnose why it failed — "wallet low" is misleading when nothing was spent
+          let headline: string;
+          if (result.totalSpent === 0) {
+            headline = `⚠️ *Brief failed — no data was fetched.*\nThe data server may be unreachable, or one of the pairs is not supported. Supported bases: BTC, ETH, SOL, XLM, ADA, XRP, BNB, DOGE, AVAX, LINK and other top-20 crypto coins.`;
+          } else if (result.partial) {
+            headline = `⚠️ *Partial brief* — wallet ran low before all pairs were complete.`;
+          } else {
+            headline = `⚠️ *Brief complete but delivery failed.*`;
+          }
+
           const lines: string[] = [
-            result.partial
-              ? `⚠️ *Partial brief* — wallet ran low before all pairs were complete.`
-              : `⚠️ *Brief generated but delivery failed.*`,
+            headline,
             `Completed: ${pairsWithBias.length}/${watchlist.length} pairs`,
           ];
 
@@ -216,12 +246,12 @@ The data API runs on \`http://localhost:3001\` and is open to any x402-compatibl
 
           lines.push(`\n─── Wallet Summary ───`);
           lines.push(`Spent: $${result.totalSpent.toFixed(4)} USDC across ${result.spendLog.length} calls`);
-          if (result.partial) lines.push(`⚠️  Wallet too low to continue — run /balance to check.`);
 
           await bot.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
         }
       })
       .catch(async (err) => {
+        briefInProgress = false;
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[bot] Agent error: ${message}`);
         await bot.sendMessage(chatId, `❌ Agent error: ${message}`);

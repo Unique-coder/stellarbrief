@@ -71,7 +71,13 @@
       "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js src/tools/checkWalletBalance.ts)",
       "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node -e ':*)",
       "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js src/agent/agent.ts BTC-USD,ETH-USD,SOL-USD 2.0 telegram)",
-      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);try{const j=JSON.parse\\(d\\);console.log\\(j.ok?'✓ Data server healthy':'✗ '+d\\)}catch\\(e\\){console.log\\('✗ Not running — '+d.slice\\(0,60\\)\\)}\")"
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);try{const j=JSON.parse\\(d\\);console.log\\(j.ok?'✓ Data server healthy':'✗ '+d\\)}catch\\(e\\){console.log\\('✗ Not running — '+d.slice\\(0,60\\)\\)}\")",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/ts-node/dist/bin.js --transpile-only -e ':*)",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(curl -s http://localhost:3001/market/XAU-USD)",
+      "Bash(curl -s http://localhost:3001/market/GBP-USD)",
+      "Bash(curl -s http://localhost:3001/market/FAKE-USD)",
+      "Bash(/Users/tomisinleshi/.nvm/versions/node/v20.18.0/bin/node node_modules/typescript/bin/tsc --noEmit --skipLibCheck)"
     ]
   }
 }

@@ -45,34 +45,121 @@ const COINGECKO_ID: Record<string, string> = {
   SUI: "sui",
   OP: "optimism",
   ARB: "arbitrum",
+  XAU: "gold",           // Gold (XAU) — tracked on CoinGecko
 };
 
-/** Parse "BTC-USD" → { base: "BTC", quote: "USD", geckoId: "bitcoin" } */
-function parsePair(raw: string): { base: string; quote: string; geckoId: string } {
+// Forex pairs routed to open.er-api.com instead of CoinGecko
+const FOREX_BASES = new Set(["GBP", "EUR", "JPY"]);
+
+// ─── In-memory market cache (30 s TTL) ───────────────────────────────────────
+
+interface CacheEntry { data: Record<string, unknown>; cachedAt: number }
+const marketCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 30_000;
+
+// ─── Pair parser ──────────────────────────────────────────────────────────────
+
+interface ParsedPair {
+  base: string;
+  quote: string;
+  geckoId?: string;
+  isForex: boolean;
+}
+
+/** Parse "BTC-USD" or "GBP-USD" into a typed descriptor */
+function parsePair(raw: string): ParsedPair {
   const [base, quote] = raw.toUpperCase().split("-");
   const geckoId = COINGECKO_ID[base];
-  if (!geckoId) throw new Error(`Unsupported pair: ${raw}. Supported bases: ${Object.keys(COINGECKO_ID).join(", ")}`);
-  return { base, quote: quote ?? "USD", geckoId };
+  const isForex = FOREX_BASES.has(base);
+  if (!geckoId && !isForex) {
+    throw new Error(
+      `Unsupported pair: ${raw}. Supported crypto bases: ${Object.keys(COINGECKO_ID).join(", ")}. Supported forex: GBP, EUR, JPY.`
+    );
+  }
+  return { base, quote: quote ?? "USD", geckoId, isForex };
 }
 
 // ─── CoinGecko helper ─────────────────────────────────────────────────────────
 
+class RateLimitError extends Error {
+  constructor() { super("RATE_LIMITED"); this.name = "RateLimitError"; }
+}
+
 async function fetchCoinGeckoPrice(geckoId: string) {
+  const cacheKey = `gecko:${geckoId}`;
+  const cached = marketCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.data as { price: number; change24h: number; high24h: number; low24h: number; volume24h: number };
+  }
+
   const url =
     `https://api.coingecko.com/api/v3/coins/markets` +
     `?vs_currency=usd&ids=${geckoId}&order=market_cap_desc&per_page=1&page=1`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`CoinGecko error ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as Array<Record<string, number>>;
-  const data = json[0];
-  if (!data) throw new Error(`No data returned for ${geckoId}`);
-  return {
-    price: data["current_price"] ?? 0,
-    change24h: data["price_change_percentage_24h"] ?? 0,
-    high24h: data["high_24h"] ?? 0,
-    low24h: data["low_24h"] ?? 0,
-    volume24h: data["total_volume"] ?? 0,
-  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.status === 429) throw new RateLimitError();
+    if (!res.ok) throw new Error(`CoinGecko error ${res.status}: ${await res.text()}`);
+    const json = (await res.json()) as Array<Record<string, number>>;
+    const data = json[0];
+    if (!data) throw new Error(`No data returned for ${geckoId}`);
+    const result = {
+      price: data["current_price"] ?? 0,
+      change24h: data["price_change_percentage_24h"] ?? 0,
+      high24h: data["high_24h"] ?? 0,
+      low24h: data["low_24h"] ?? 0,
+      volume24h: data["total_volume"] ?? 0,
+    };
+    marketCache.set(cacheKey, { data: result, cachedAt: Date.now() });
+    return result;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") throw new Error("CoinGecko fetch timed out");
+    throw err;
+  }
+}
+
+// ─── Forex helper (open.er-api.com — no key required) ────────────────────────
+
+async function fetchForexRate(base: string) {
+  const cacheKey = `forex:${base}`;
+  const cached = marketCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.data as { price: number; change24h: number; high24h: number; low24h: number; volume24h: number; note: string };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`Exchange rate API error ${res.status}`);
+    const json = (await res.json()) as { result: string; rates: Record<string, number> };
+    const rate = json.rates[base];
+    if (!rate) throw new Error(`No exchange rate found for ${base}`);
+    // rates[BASE] = units of BASE per 1 USD → invert for USD per BASE
+    const price = parseFloat((1 / rate).toFixed(6));
+    const result = {
+      price,
+      change24h: 0,   // not available on free tier
+      high24h: 0,
+      low24h: 0,
+      volume24h: 0,
+      note: "Forex pair — 24h change unavailable on free tier",
+    };
+    marketCache.set(cacheKey, { data: result, cachedAt: Date.now() });
+    return result;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") throw new Error("Exchange rate fetch timed out");
+    throw err;
+  }
 }
 
 // ─── CryptoPanic RSS helper ───────────────────────────────────────────────────
@@ -84,10 +171,23 @@ interface NewsItem {
   publishedAt: string;
 }
 
-async function fetchCoinDeskNews(base: string): Promise<NewsItem[]> {
-  const res = await fetch("https://feeds.feedburner.com/CoinDesk", {
-    headers: { Accept: "application/rss+xml, text/xml, */*" },
-  });
+async function fetchCoinDeskNews(base: string): Promise<{ items: NewsItem[]; timedOut: boolean }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  let res: Response;
+  try {
+    res = await fetch("https://feeds.feedburner.com/CoinDesk", {
+      headers: { Accept: "application/rss+xml, text/xml, */*" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") {
+      return { items: [], timedOut: true };
+    }
+    throw err;
+  }
   if (!res.ok) throw new Error(`CoinDesk RSS error ${res.status}`);
   const xml = await res.text();
 
@@ -148,7 +248,7 @@ async function fetchCoinDeskNews(base: string): Promise<NewsItem[]> {
     }
   }
 
-  return items;
+  return { items, timedOut: false };
 }
 
 // ─── Claude helpers ───────────────────────────────────────────────────────────
@@ -301,9 +401,15 @@ app.use(
 
 app.get("/market/:pair", async (req, res) => {
   try {
-    const { base, quote, geckoId } = parsePair(req.params["pair"] ?? "BTC-USD");
-    const data = await fetchCoinGeckoPrice(geckoId);
-    res.json({
+    const { base, quote, geckoId, isForex } = parsePair(req.params["pair"] ?? "BTC-USD");
+
+    if (isForex) {
+      const data = await fetchForexRate(base);
+      return res.json({ pair: `${base}-${quote}`, ...data, timestamp: Date.now(), source: "open.er-api.com" });
+    }
+
+    const data = await fetchCoinGeckoPrice(geckoId!);
+    return res.json({
       pair: `${base}-${quote}`,
       price: data.price,
       change24h: parseFloat(data.change24h.toFixed(4)),
@@ -314,8 +420,11 @@ app.get("/market/:pair", async (req, res) => {
       source: "coingecko",
     });
   } catch (err) {
+    if (err instanceof RateLimitError) {
+      return res.status(503).json({ error: "Rate limited", retryAfter: 60 });
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(502).json({ error: msg });
+    return res.status(502).json({ error: msg });
   }
 });
 
@@ -324,11 +433,14 @@ app.get("/market/:pair", async (req, res) => {
 app.get("/news/:pair", async (req, res) => {
   try {
     const { base } = parsePair(req.params["pair"] ?? "BTC-USD");
-    const items = await fetchCoinDeskNews(base);
-    res.json({ pair: req.params["pair"]?.toUpperCase(), count: items.length, items });
+    const { items, timedOut } = await fetchCoinDeskNews(base);
+    if (timedOut) {
+      return res.json({ pair: req.params["pair"]?.toUpperCase(), count: 0, items: [], note: "News fetch timed out" });
+    }
+    return res.json({ pair: req.params["pair"]?.toUpperCase(), count: items.length, items });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(502).json({ error: msg });
+    return res.status(502).json({ error: msg });
   }
 });
 
@@ -338,9 +450,10 @@ app.get("/sentiment/:pair", async (req, res) => {
   try {
     const { base } = parsePair(req.params["pair"] ?? "BTC-USD");
     const pairStr = req.params["pair"]?.toUpperCase() ?? "BTC-USD";
-    const headlines = await fetchCoinDeskNews(base);
-    if (headlines.length === 0) {
-      return res.json({ pair: pairStr, score: 0, label: "NEUTRAL", rationale: "No recent headlines found." });
+    const { items: headlines, timedOut } = await fetchCoinDeskNews(base);
+    if (timedOut || headlines.length === 0) {
+      const rationale = timedOut ? "News fetch timed out — sentiment unavailable." : "No recent headlines found.";
+      return res.json({ pair: pairStr, score: 0, label: "NEUTRAL", rationale });
     }
     const sentiment = await claudeSentiment(pairStr, headlines);
     return res.json({ pair: pairStr, ...sentiment });
@@ -354,18 +467,18 @@ app.get("/sentiment/:pair", async (req, res) => {
 
 app.get("/bias/:pair", async (req, res) => {
   try {
-    const { base, quote, geckoId } = parsePair(req.params["pair"] ?? "BTC-USD");
+    const { base, quote, geckoId, isForex } = parsePair(req.params["pair"] ?? "BTC-USD");
     const pairStr = `${base}-${quote}`;
 
-    const [market, headlines] = await Promise.all([
-      fetchCoinGeckoPrice(geckoId),
+    const [market, newsResult] = await Promise.all([
+      isForex ? fetchForexRate(base) : fetchCoinGeckoPrice(geckoId!),
       fetchCoinDeskNews(base),
     ]);
 
     let sentimentScore = 0;
-    let sentimentRationale = "Insufficient news data.";
-    if (headlines.length > 0) {
-      const s = await claudeSentiment(pairStr, headlines);
+    let sentimentRationale = newsResult.timedOut ? "News fetch timed out." : "Insufficient news data.";
+    if (!newsResult.timedOut && newsResult.items.length > 0) {
+      const s = await claudeSentiment(pairStr, newsResult.items);
       sentimentScore = s.score;
       sentimentRationale = s.rationale;
     }
@@ -373,6 +486,9 @@ app.get("/bias/:pair", async (req, res) => {
     const bias = await claudeBias(pairStr, market.price, market.change24h, sentimentScore, sentimentRationale);
     return res.json({ pair: pairStr, ...bias, timestamp: Date.now() });
   } catch (err) {
+    if (err instanceof RateLimitError) {
+      return res.status(503).json({ error: "Rate limited", retryAfter: 60 });
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(502).json({ error: msg });
   }
@@ -424,14 +540,18 @@ app.post("/deliver/telegram", async (req, res) => {
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     const telegramRes = await fetch(
       `https://api.telegram.org/bot${token}/sendMessage`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "Markdown" }),
+        signal: controller.signal,
       }
     );
+    clearTimeout(timeout);
     if (!telegramRes.ok) {
       const errText = await telegramRes.text();
       throw new Error(`Telegram API ${telegramRes.status}: ${errText}`);
