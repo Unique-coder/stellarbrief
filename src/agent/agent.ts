@@ -197,6 +197,8 @@ export async function runAgent(
   );
   let delivered = false;
 
+  console.log(`[agent] Starting run: ${watchlist.join(", ")} | delivery: ${deliveryMethod} → ${deliveryTarget}`);
+
   // ── x402 client ──
   const secretKey = process.env.STELLAR_SECRET_KEY;
   if (!secretKey) throw new Error("STELLAR_SECRET_KEY not set");
@@ -219,6 +221,7 @@ export async function runAgent(
     const data = await response.json();
     const balanceAfter = await checkWalletBalance();
     spendLog.push({ tool: toolName, cost: CALL_COST, balanceBefore, balanceAfter, timestamp: Date.now() });
+    console.log(`[agent] ${toolName.padEnd(22)} $${CALL_COST.toFixed(2)}  $${balanceBefore.toFixed(2)} → $${balanceAfter.toFixed(2)}`);
     return data;
   }
 
@@ -239,6 +242,7 @@ export async function runAgent(
     const data = await response.json();
     const balanceAfter = await checkWalletBalance();
     spendLog.push({ tool: toolName, cost: CALL_COST, balanceBefore, balanceAfter, timestamp: Date.now() });
+    console.log(`[agent] ${toolName.padEnd(22)} $${CALL_COST.toFixed(2)}  $${balanceBefore.toFixed(2)} → $${balanceAfter.toFixed(2)}`);
     return data;
   }
 
@@ -246,6 +250,7 @@ export async function runAgent(
 
   async function handle_check_wallet_balance(): Promise<unknown> {
     const balance = await checkWalletBalance();
+    console.log(`[agent] check_wallet_balance    $${balance.toFixed(2)} USDC`);
     return { balance, currency: "USDC" };
   }
 
@@ -254,10 +259,11 @@ export async function runAgent(
     const balance = await checkWalletBalance();
     const biasDecision = shouldGenerateBias(balance); // reuse: same budget gate as any paid call
     if (!biasDecision.should) {
+      console.log(`[agent] fetch_market_data       SKIP  ${pair}  — ${biasDecision.reason}`);
       return { skipped: true, reason: biasDecision.reason };
     }
+    console.log(`[agent] → fetch_market_data     ${pair}`);
     const data = (await paidGet(`/market/${pair}`, "fetch_market_data")) as Record<string, unknown>;
-    // Store for use by downstream decision functions
     const entry = pairMap.get(pair) ?? { pair };
     entry.marketData = data;
     pairMap.set(pair, entry);
@@ -268,11 +274,13 @@ export async function runAgent(
     const pair = input.pair.toUpperCase();
     const balance = await checkWalletBalance();
     const storedMarket = pairMap.get(pair)?.marketData as { change24h?: number } | undefined;
-    const priceChange = storedMarket?.change24h ?? volatilityThreshold; // if unknown, treat as sufficient
+    const priceChange = storedMarket?.change24h ?? volatilityThreshold;
     const decision = shouldFetchNews(balance, volatilityThreshold, priceChange);
     if (!decision.should) {
+      console.log(`[agent] fetch_news              SKIP  ${pair}  — ${decision.reason}`);
       return { skipped: true, reason: decision.reason };
     }
+    console.log(`[agent] → fetch_news            ${pair}`);
     const data = (await paidGet(`/news/${pair}`, "fetch_news")) as Record<string, unknown>;
     const entry = pairMap.get(pair) ?? { pair };
     entry.news = (data as { items?: unknown[] }).items ?? [];
@@ -287,8 +295,10 @@ export async function runAgent(
     const priceChange = storedMarket?.change24h ?? volatilityThreshold;
     const decision = shouldFetchSentiment(balance, volatilityThreshold, priceChange);
     if (!decision.should) {
+      console.log(`[agent] fetch_sentiment         SKIP  ${pair}  — ${decision.reason}`);
       return { skipped: true, reason: decision.reason };
     }
+    console.log(`[agent] → fetch_sentiment       ${pair}`);
     const data = (await paidGet(`/sentiment/${pair}`, "fetch_sentiment")) as Record<string, unknown>;
     const entry = pairMap.get(pair) ?? { pair };
     entry.sentiment = data;
@@ -301,8 +311,10 @@ export async function runAgent(
     const balance = await checkWalletBalance();
     const decision = shouldGenerateBias(balance);
     if (!decision.should) {
+      console.log(`[agent] generate_bias           SKIP  ${pair}  — ${decision.reason}`);
       return { skipped: true, reason: decision.reason };
     }
+    console.log(`[agent] → generate_bias         ${pair}`);
     const data = (await paidGet(`/bias/${pair}`, "generate_bias")) as Record<string, unknown>;
     const entry = pairMap.get(pair) ?? { pair };
     entry.bias = data;
@@ -320,9 +332,11 @@ export async function runAgent(
     const method = input.method as "telegram" | "email";
     const decision = shouldDeliver(balance, method);
     if (!decision.should) {
+      console.log(`[agent] deliver_brief           SKIP  — ${decision.reason}`);
       return { skipped: true, reason: decision.reason };
     }
 
+    console.log(`[agent] → deliver_brief         ${method}`);
     let result: unknown;
     if (method === "telegram") {
       const chatId = input.chatId ?? deliveryTarget;
@@ -340,6 +354,7 @@ export async function runAgent(
       );
     }
     delivered = true;
+    console.log(`[agent] ✓ brief delivered via ${method}`);
     return result;
   }
 
@@ -429,6 +444,8 @@ Work through each pair in sequence. Follow the system prompt rules exactly.`;
   const completedPairs = pairs.filter((p) => p.bias !== undefined);
   const partial = completedPairs.length < watchlist.length;
   const totalSpent = spendLog.reduce((sum, e) => sum + e.cost, 0);
+
+  console.log(`[agent] Run complete — $${totalSpent.toFixed(2)} USDC spent across ${spendLog.length} calls | delivered: ${delivered} | partial: ${partial}`);
 
   return { pairs, spendLog, delivered, partial, totalSpent };
 }
