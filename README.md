@@ -1,4 +1,3 @@
-@ -1,227 +0,0 @@
 # StellarBrief
 
 **A two-sided x402 trading intelligence market on Stellar — where AI agents autonomously pay for the data they consume.**
