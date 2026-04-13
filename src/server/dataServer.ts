@@ -45,11 +45,13 @@ const COINGECKO_ID: Record<string, string> = {
   SUI: "sui",
   OP: "optimism",
   ARB: "arbitrum",
-  XAU: "gold",           // Gold (XAU) — tracked on CoinGecko
 };
 
-// Forex pairs routed to open.er-api.com instead of CoinGecko
+// Forex + commodity pairs — routed to dedicated fetchers instead of CoinGecko
 const FOREX_BASES = new Set(["GBP", "EUR", "JPY"]);
+const YAHOO_SYMBOLS: Record<string, string> = {
+  XAU: "GC=F",   // Gold futures (COMEX)
+};
 
 // ─── In-memory market cache (30 s TTL) ───────────────────────────────────────
 
@@ -66,14 +68,14 @@ interface ParsedPair {
   isForex: boolean;
 }
 
-/** Parse "BTC-USD" or "GBP-USD" into a typed descriptor */
+/** Parse "BTC-USD", "GBP-USD", or "XAU-USD" into a typed descriptor */
 function parsePair(raw: string): ParsedPair {
   const [base, quote] = raw.toUpperCase().split("-");
   const geckoId = COINGECKO_ID[base];
-  const isForex = FOREX_BASES.has(base);
+  const isForex = FOREX_BASES.has(base) || base in YAHOO_SYMBOLS;
   if (!geckoId && !isForex) {
     throw new Error(
-      `Unsupported pair: ${raw}. Supported crypto bases: ${Object.keys(COINGECKO_ID).join(", ")}. Supported forex: GBP, EUR, JPY.`
+      `Unsupported pair: ${raw}. Supported crypto bases: ${Object.keys(COINGECKO_ID).join(", ")}. Supported forex/commodities: GBP, EUR, JPY, XAU.`
     );
   }
   return { base, quote: quote ?? "USD", geckoId, isForex };
@@ -158,6 +160,52 @@ async function fetchForexRate(base: string) {
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof Error && err.name === "AbortError") throw new Error("Exchange rate fetch timed out");
+    throw err;
+  }
+}
+
+// ─── Yahoo Finance helper (commodities: XAU etc.) ────────────────────────────
+
+async function fetchYahooPrice(base: string) {
+  const symbol = YAHOO_SYMBOLS[base];
+  if (!symbol) throw new Error(`No Yahoo Finance symbol for ${base}`);
+
+  const cacheKey = `yahoo:${base}`;
+  const cached = marketCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.data as { price: number; change24h: number; high24h: number; low24h: number; volume24h: number };
+  }
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`Yahoo Finance error ${res.status}`);
+    const json = (await res.json()) as {
+      chart: { result: Array<{ meta: Record<string, number> }> };
+    };
+    const meta = json.chart?.result?.[0]?.meta;
+    if (!meta) throw new Error(`No Yahoo Finance data for ${symbol}`);
+    const price = meta["regularMarketPrice"] ?? 0;
+    const prevClose = meta["previousClose"] ?? meta["chartPreviousClose"] ?? price;
+    const change24h = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+    const result = {
+      price,
+      change24h: parseFloat(change24h.toFixed(4)),
+      high24h: meta["regularMarketDayHigh"] ?? 0,
+      low24h: meta["regularMarketDayLow"] ?? 0,
+      volume24h: meta["regularMarketVolume"] ?? 0,
+    };
+    marketCache.set(cacheKey, { data: result, cachedAt: Date.now() });
+    return result;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") throw new Error("Yahoo Finance fetch timed out");
     throw err;
   }
 }
@@ -300,16 +348,19 @@ async function claudeBias(
   rationale: string;
   keyLevels: { support: number; resistance: number };
 }> {
-  const prompt = `You are a professional crypto trading analyst. Produce a directional bias for ${pair} based on:
+  const changeNote = change24h === 0
+    ? "24h change: unavailable (forex or commodity pair — use price level and sentiment only)"
+    : `24h change: ${change24h.toFixed(2)}%`;
+  const prompt = `You are a professional market analyst covering crypto, forex, and commodities. Produce a directional bias for ${pair} based on:
 - Current price: $${price.toFixed(2)}
-- 24h change: ${change24h.toFixed(2)}%
+- ${changeNote}
 - Sentiment score: ${sentimentScore.toFixed(2)} (range -1.0 to +1.0)
 - Sentiment rationale: ${sentimentRationale}
 
 Respond with ONLY a JSON object in this exact format:
 {"signal": "<BULLISH|BEARISH|NEUTRAL>", "confidence": "<HIGH|MEDIUM|LOW>", "rationale": "<2 sentences max>", "keyLevels": {"support": <number>, "resistance": <number>}}
 
-Estimate key support and resistance levels as round numbers near the current price.`;
+Estimate key support and resistance levels as round numbers near the current price. Always provide a signal — never return null or N/A.`;
 
   const msg = await getAnthropic().messages.create({
     model: "claude-haiku-4-5",
@@ -403,7 +454,12 @@ app.get("/market/:pair", async (req, res) => {
   try {
     const { base, quote, geckoId, isForex } = parsePair(req.params["pair"] ?? "BTC-USD");
 
-    if (isForex) {
+    if (base in YAHOO_SYMBOLS) {
+      const data = await fetchYahooPrice(base);
+      return res.json({ pair: `${base}-${quote}`, ...data, timestamp: Date.now(), source: "yahoo-finance" });
+    }
+
+    if (FOREX_BASES.has(base)) {
       const data = await fetchForexRate(base);
       return res.json({ pair: `${base}-${quote}`, ...data, timestamp: Date.now(), source: "open.er-api.com" });
     }
@@ -470,10 +526,13 @@ app.get("/bias/:pair", async (req, res) => {
     const { base, quote, geckoId, isForex } = parsePair(req.params["pair"] ?? "BTC-USD");
     const pairStr = `${base}-${quote}`;
 
-    const [market, newsResult] = await Promise.all([
-      isForex ? fetchForexRate(base) : fetchCoinGeckoPrice(geckoId!),
-      fetchCoinDeskNews(base),
-    ]);
+    const fetchMarket = base in YAHOO_SYMBOLS
+      ? fetchYahooPrice(base)
+      : FOREX_BASES.has(base)
+        ? fetchForexRate(base)
+        : fetchCoinGeckoPrice(geckoId!);
+
+    const [market, newsResult] = await Promise.all([fetchMarket, fetchCoinDeskNews(base)]);
 
     let sentimentScore = 0;
     let sentimentRationale = newsResult.timedOut ? "News fetch timed out." : "Insufficient news data.";
