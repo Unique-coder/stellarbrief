@@ -51,8 +51,8 @@ The agent (`src/agent/agent.ts`) runs a Claude Sonnet 4.6 tool-use loop. It rece
 
 1. **Checks wallet balance** (free — reads Stellar Horizon)
 2. **Fetches market data** for each pair via x402 (`$0.01`)
-3. **Fetches news + sentiment** only if `|24h change| ≥ threshold` and budget allows (`$0.01` each)
-4. **Generates bias** for every pair regardless of volatility (`$0.01`)
+3. **Fetches news + sentiment** for every pair if budget allows (`$0.01` each)
+4. **Generates bias** for every pair (`$0.01`)
 5. **Delivers the brief** via Telegram or email once all pairs are done (`$0.01`)
 
 A minimum floor of $0.05 USDC is maintained at all times. If the wallet would drop below the floor mid-run, the agent stops, notes which pairs are incomplete, and delivers a partial brief with what it has.

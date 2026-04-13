@@ -314,7 +314,7 @@ async function claudeSentiment(
 ): Promise<{ score: number; label: "BULLISH" | "BEARISH" | "NEUTRAL"; rationale: string }> {
   const headlineText = headlines.map((h, i) => `${i + 1}. ${h.headline}`).join("\n");
   const prompt = `You are a crypto market analyst. Based on the following recent news headlines for ${pair}, score the overall market sentiment on a scale from -1.0 (very bearish) to +1.0 (very bullish). Respond with ONLY a JSON object in this exact format:
-{"score": <number between -1.0 and 1.0>, "label": "<BULLISH|BEARISH|NEUTRAL>", "rationale": "<one sentence max>"}
+{"score": <number between -1.0 and 1.0>, "label": "<BULLISH|BEARISH|NEUTRAL>", "rationale": "<5 words max>"}
 
 Headlines:
 ${headlineText}`;
@@ -358,7 +358,7 @@ async function claudeBias(
 - Sentiment rationale: ${sentimentRationale}
 
 Respond with ONLY a JSON object in this exact format:
-{"signal": "<BULLISH|BEARISH|NEUTRAL>", "confidence": "<HIGH|MEDIUM|LOW>", "rationale": "<2 sentences max>", "keyLevels": {"support": <number>, "resistance": <number>}}
+{"signal": "<BULLISH|BEARISH|NEUTRAL>", "confidence": "<HIGH|MEDIUM|LOW>", "rationale": "<one sentence, 15 words max>", "keyLevels": {"support": <number>, "resistance": <number>}}
 
 Estimate key support and resistance levels as round numbers near the current price. Always provide a signal — never return null or N/A.`;
 

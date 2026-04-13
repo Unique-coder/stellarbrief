@@ -64,8 +64,8 @@ RULES:
 - For each pair in the watchlist, work through this sequence:
   1. check_wallet_balance
   2. fetch_market_data (always, if budget allows)
-  3. check_wallet_balance, then fetch_news ONLY if |24h change| >= volatility threshold AND budget allows
-  4. check_wallet_balance, then fetch_sentiment ONLY if |24h change| >= volatility threshold AND budget allows
+  3. check_wallet_balance, then fetch_news if budget allows
+  4. check_wallet_balance, then fetch_sentiment if budget allows
   5. check_wallet_balance, then generate_bias ALWAYS if budget allows (this is the core deliverable)
 - When all pairs are done, check_wallet_balance, then call deliver_brief ONCE with the full formatted message.
 - If your balance drops too low mid-run (balance - 0.01 < 0.05), stop analyzing, note which pairs are incomplete, and deliver a partial brief with what you have.
@@ -110,7 +110,7 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: "fetch_news",
     description:
-      "Fetch the latest crypto news headlines for a trading pair from CoinDesk RSS. Costs $0.01 USDC. Only call this if |24h change| >= volatility threshold AND budget allows.",
+      "Fetch the latest crypto news headlines for a trading pair from CoinDesk RSS. Costs $0.01 USDC. Call this if budget allows.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -125,7 +125,7 @@ const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: "fetch_sentiment",
     description:
-      "Fetch Claude-powered sentiment score for a pair based on live headlines. Score: -1.0 (very bearish) to +1.0 (very bullish). Costs $0.01 USDC. Only call when price is moving meaningfully.",
+      "Fetch Claude-powered sentiment score for a pair based on live headlines. Score: -1.0 (very bearish) to +1.0 (very bullish). Costs $0.01 USDC. Call this if budget allows.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -365,7 +365,6 @@ export async function runAgent(
 
   const userPrompt = `Analyze the following trading pairs and generate a brief:
 Pairs: ${watchlist.join(", ")}
-Volatility threshold: ${volatilityThreshold}% (fetch news + sentiment only if |24h change| >= this)
 Delivery: ${deliveryMethod} → ${deliveryTarget}
 
 Work through each pair in sequence. Follow the system prompt rules exactly.`;

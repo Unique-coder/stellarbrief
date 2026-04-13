@@ -26,52 +26,39 @@ function hasBudget(balance: number): boolean {
 // ─── shouldFetchNews ─────────────────────────────────────────────────────────
 
 /**
- * Fetch news only when price is moving meaningfully AND budget allows.
- * @param balance       Current USDC wallet balance
- * @param threshold     Minimum absolute 24h price-change % to justify the call
- * @param priceChange24h 24h price change as a percentage (e.g. 3.5 = +3.5%)
+ * Fetch news whenever budget allows.
+ * @param balance Current USDC wallet balance
  */
 export function shouldFetchNews(
   balance: number,
-  threshold: number,
-  priceChange24h: number
+  _threshold?: number,
+  _priceChange24h?: number
 ): Decision {
-  const moving = Math.abs(priceChange24h) >= threshold;
   const funded = hasBudget(balance);
 
   if (!funded) {
     return { should: false, reason: `Insufficient balance: $${balance.toFixed(4)} — need at least $${(MINIMUM_FLOOR + CALL_COST).toFixed(2)}` };
   }
-  if (!moving) {
-    return { should: false, reason: `Price change ${priceChange24h.toFixed(2)}% is below threshold of ${threshold}% — news not worth fetching` };
-  }
-  return { should: true, reason: `Price moved ${priceChange24h.toFixed(2)}% (≥ ${threshold}%) and balance $${balance.toFixed(4)} is sufficient` };
+  return { should: true, reason: `Balance $${balance.toFixed(4)} is sufficient to fetch news` };
 }
 
 // ─── shouldFetchSentiment ────────────────────────────────────────────────────
 
 /**
- * Fetch sentiment only when price is moving meaningfully AND budget allows.
- * Sentiment without meaningful movement adds noise over signal.
- * @param balance       Current USDC wallet balance
- * @param threshold     Minimum absolute 24h price-change % to justify the call
- * @param priceChange24h 24h price change as a percentage
+ * Fetch sentiment whenever budget allows.
+ * @param balance Current USDC wallet balance
  */
 export function shouldFetchSentiment(
   balance: number,
-  threshold: number,
-  priceChange24h: number
+  _threshold?: number,
+  _priceChange24h?: number
 ): Decision {
-  const moving = Math.abs(priceChange24h) >= threshold;
   const funded = hasBudget(balance);
 
   if (!funded) {
     return { should: false, reason: `Insufficient balance: $${balance.toFixed(4)} — need at least $${(MINIMUM_FLOOR + CALL_COST).toFixed(2)}` };
   }
-  if (!moving) {
-    return { should: false, reason: `Price change ${priceChange24h.toFixed(2)}% is below threshold of ${threshold}% — sentiment not worth fetching` };
-  }
-  return { should: true, reason: `Price moved ${priceChange24h.toFixed(2)}% (≥ ${threshold}%) and balance $${balance.toFixed(4)} is sufficient` };
+  return { should: true, reason: `Balance $${balance.toFixed(4)} is sufficient to fetch sentiment` };
 }
 
 // ─── shouldGenerateBias ──────────────────────────────────────────────────────
