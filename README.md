@@ -89,7 +89,7 @@ Confidence: MEDIUM
 Support:    $82,000   Resistance: $86,500
 Rationale:  BTC consolidating above key support with steady accumulation.
             On-chain metrics remain constructive despite low volatility.
-News:       not fetched (24h move below 2% threshold)
+News:       not fetched 
 Sentiment:  not fetched
 
 ═══ ETH-USD ═══
@@ -109,7 +109,7 @@ Confidence: LOW
 Support:    $118   Resistance: $132
 Rationale:  SOL showing relative strength vs peers near key support zone.
             Low confidence due to thin volume and proximity to threshold.
-News:       not fetched (24h move below 2% threshold)
+News:       5 fetched sources
 Sentiment:  not fetched
 
 ─── Wallet Summary ───
